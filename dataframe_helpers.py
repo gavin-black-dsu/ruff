@@ -37,14 +37,24 @@ def replace_model_substring(corpus_value):
 def truncate_field(v ,num):
     return v[:num]
 
-def truncate_error(df, error_len=10):
-    df["Error"] = df['Error'].apply(lambda x: truncate_field(x, error_len))
+def truncate_error(df, func_name, error_len=10):
+    # Specific fix for ics_Calendar
+    def calendar_fix(val):
+        if "ALPHADIGIT_MINUS_PLUS" in val: return "ALPHADIGIT_MINUS_PLUS"
+        if "Expecting end of text" in val: return "Expecting end of text"
+        if val.startswith("(") and val.endswith(")"):
+            return val[-2:]
+        return val
+    
+    if func_name == "ics_Calendar": df['Error'] = df['Error'].apply(calendar_fix)
+    else: df["Error"] = df['Error'].apply(lambda x: truncate_field(x, error_len))
     return df
 
 def update_dataframe(df):
     # Apply the function to each row and update the 'Sample' column
     df['Sample Text'] = df.apply(load_and_sanitize_file, axis=1)
     #df["Top Function Calls"] = pd.to_numeric(df["Top Function Calls"])
+    df['Corpus Location'] = df['Corpus'] # Still keep the original location
     df['Corpus'] = df['Corpus'].apply(lambda x: replace_model_substring(x))
 
     print(len(df['Sample'].unique()))
