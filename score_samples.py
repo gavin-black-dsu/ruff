@@ -1,57 +1,18 @@
-import configparser
 import argparse
 import os
 import shutil
 from tqdm import tqdm, trange
 import pandas as pd
 import time
+import pickle
 
 from statistics_tests import perform_ks, estimate_power_with_data
-from seed_data_mappers import model_dict, file_to_directory, model_dirs
+#from seed_data_mappers import model_dict, file_to_directory, model_dirs
 from dataframe_helpers import update_dataframe, extract_prefix, truncate_error
 from scoring import normalize_resources, scaled_resources, transformer_embeddings, quantized_vectors, make_anomaly_scores
+from trial_config import read_config
 
-def read_config(config_file):
-    """
-    Reads the configuration from the given INI file and returns a dictionary
-    of configurations.
-    """
-    config = configparser.ConfigParser()
-    config.read(config_file)
-    print(config_file)
-    settings = {
-        'name': config.get('Trial', 'name'),
-        'directory': config.get('Paths', 'directory'),
-        'corpora_dir': config.get('Paths', 'corpora_dir'),
-        'fuzz_dir': config.get('Paths', 'fuzz_dir'),
-        'max_errors': config.getint('Settings', 'max_errors'),
-        'n_simulations': config.getint('Settings', 'n_simulations'),
-        'ks_a': config.getfloat('Settings', 'ks_a'),
-        'k': config.getint('Settings', 'k'),
-        'limit_atheris': config.getboolean('Settings', 'limit_atheris'),
-        'atheris_entries': config.getint('Settings', 'atheris_entries'),
-        'batch_size': config.getint('Settings', 'batch_size'),
-        'number_of_samples': config.getint('Fuzzing', 'number_of_samples'),
-        'fuzzer': config.get('Fuzzing', 'fuzzer'),
-
-        'alpha_embed': config.getfloat('Score Coefficients', 'alpha_embed'),
-        'beta_scaled': config.getfloat('Score Coefficients', 'beta_scaled'),
-        'gamma_anom': config.getfloat('Score Coefficients', 'gamma_anom'),
-        'scaling_factors': {
-            'Output_Size_B': config.getfloat('Scaling', 'Output_Size_B'),
-            'Output_Entropy_bits_per_symbol': config.getfloat('Scaling', 'Output_Entropy_bits_per_symbol'),
-            'Top_Function_Calls': config.getfloat('Scaling', 'Top_Function_Calls'),
-            'Peak_Memory_B': config.getfloat('Scaling', 'Peak_Memory_B'),
-            'Final_Memory_B': config.getfloat('Scaling', 'Final_Memory_B'),
-            'CPU_ms': config.getfloat('Scaling', 'CPU_ms'),
-            'SLOC': config.getfloat('Scaling', 'SLOC'),
-            'Instructions': config.getfloat('Scaling', 'Instructions'),
-        }
-    }
-
-    return settings
-
-def main(cur_test, dataframe_loc, config_file='config.ini', iteration=1) :
+def main(  cur_test, dataframe_loc, config_file='config.ini', iteration=1):
     # Parse the configuration file
     config = read_config(config_file)
 
@@ -76,8 +37,7 @@ def main(cur_test, dataframe_loc, config_file='config.ini', iteration=1) :
     else:
         df["Embeddings Distances"] = 0
     embedding_time = time.time() 
-        
-        
+                
     if gamma_anom > 0: # Skip resource anomalies if not part of score
         df = quantized_vectors(df)
         df = make_anomaly_scores(df, "Resources", k)
@@ -98,42 +58,47 @@ def main(cur_test, dataframe_loc, config_file='config.ini', iteration=1) :
     end_time = time.time()
 
     print("Max Scores: ")
-    v = df["Embeddings Distances"].max()
-    print(f"  - Embeddings: {v}")
-    v = df["Scaled Resources"].max()
-    print(f"  - Scaled:     {v}")
-    v = df["Resources Distances"].max()
-    print(f"  - Resources:  {v}")
-    v = df["Score"].max()
-    print(f"  - Score:      {v}")
+    print("  - Embeddings: " + str(df["Embeddings Distances"].max()))
+    print("  - Scaled:     " + str(df["Scaled Resources"].max()))
+    print("  - Resources:  " + str(df["Resources Distances"].max()))
+    print("  - Score:      " + str(df["Score"].max()))
 
     times = { "Embedding Anomaly Time (ms)": 1000 * (embedding_time - start_time),
               "Resource Anomaly Time (ms)": 1000 * (resource_time - embedding_time),
               "Resource Scaled Time (ms)": 1000 * (scale_time - resource_time),
               "Total Time (ms)": 1000 * (end_time - start_time)
             }
-    
+    counts = { "LLM": 0 }
+
+    # Find and step through all the highest scoring samples
     top_samples = df.nlargest(config["number_of_samples"], 'Score')
     count = 0
+    score_dir, fuzz_dir = config["score_dir"], config["fuzz_dir"]
+    test_name, fuzzer = config["name"], config["fuzzer"]
     for index, row in top_samples.iterrows():
-        corpus = row['Corpus']
+        corpus = row['Corpus Location']
         sample = row['Sample']
-
-        corpora_dir, fuzz_dir = config["corpora_dir"], config["fuzz_dir"]
-        test_name, fuzzer = config["name"], config["fuzzer"]
-        c_dir = file_to_directory[f"file_{cur_test}.py"]
-        merge = "/merge_corpus"
+        sample_path = f"{corpus}/{sample}"
     
-        if corpus == "Atheris" or corpus == "Random": merge = ""
-        sample_path = f"{corpora_dir}/{c_dir}/{model_dirs[corpus]}{merge}/{sample}"
-        
-     
         out_dir = f"{fuzz_dir}/{test_name}/{cur_test}/{fuzzer}/{iteration}/Samples"
+          
         count += 1
         os.makedirs(out_dir, exist_ok=True)
-        #print(sample_path, f"{out_dir}/{count}.txt")
         shutil.copy(sample_path, f"{out_dir}/{count}.txt")
-
+    
+        # Track which corpus each sample comes from
+        if "atheris" not in corpus and "random_data" not in corpus:
+            counts["LLM"] += 1
+        
+        if corpus not in counts.keys(): counts[corpus] = 0
+        counts[corpus] += 1
+    
+    # Save the accumulated dataframe and metadata
+    print(f"{score_dir}/{test_name}")
+    df.to_parquet(f"{score_dir}/{test_name}___{cur_test}.parquet")
+    with open(f'{score_dir}/{test_name}___{cur_test}.pkl', 'wb') as file:
+        pickle.dump({"Top Counts": counts, "Performance": times}, file)
+    
 if __name__ == '__main__':
     # Setup argparse for command line arguments
     parser = argparse.ArgumentParser(description='Read configuration from INI file and analyze resources.')

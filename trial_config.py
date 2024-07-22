@@ -13,6 +13,7 @@ def read_config(config_file):
         'directory': config.get('Paths', 'directory'),
         'corpora_dir': config.get('Paths', 'corpora_dir'),
         'fuzz_dir': config.get('Paths', 'fuzz_dir'),
+        'score_dir': config.get('Paths', 'score_dir'),
 
         'max_errors': config.getint('Settings', 'max_errors'),
         'n_simulations': config.getint('Settings', 'n_simulations'),
