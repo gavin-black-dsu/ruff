@@ -23,20 +23,26 @@ def random_mutation(sample, max_size):
     
     return sample
 
-def process_files(input_dir, output_dir, max_size, num_mutations, num_samples):
+def process_files(input_dir, output_dir, max_size, num_mutations, num_samples, split=False):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
-    for filename in os.listdir(input_dir):
+    for count, filename in enumerate(os.listdir(input_dir)):
         input_file = os.path.join(input_dir, filename)
+
         with open(input_file, 'rb') as f:
             sample = f.read()
         
         for i in range(num_samples):
             mutated_sample = sample
+            final_output = output_dir
+            if split: 
+                final_output += f"/core{i}"
+                os.makedirs(final_output, exist_ok=True)
+
             for j in range(num_mutations):
                 mutated_sample = random_mutation(mutated_sample, max_size)
-                output_file = os.path.join(output_dir, f"mutated_{i+1}_{j+1}_{filename}")
+                output_file = os.path.join(final_output, f"mutated_{count}_{i+1}_{j+1}_{filename}")
                 with open(output_file, 'wb') as f:
                     f.write(mutated_sample)
 
@@ -51,11 +57,7 @@ def main():
     args = parser.parse_args()
 
     config = read_config(args.config)
-    print(args.split)
-    print(args.input_dir)
-    print(args.output_dir)
-    print(config["max_sample_size"], config["number_of_steps"], config["number_of_variants"])
-    process_files(args.input_dir, args.output_dir, config["max_sample_size"], config["number_of_steps"], config["number_of_variants"])
+    process_files(args.input_dir, args.output_dir, config["max_sample_size"], config["number_of_steps"], config["number_of_variants"], args.split)
 
 if __name__ == "__main__":
     main()
