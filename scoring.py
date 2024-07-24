@@ -1,6 +1,7 @@
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 import pandas as pd
 import numpy as np
+from tqdm import trange
 from transformers import AutoModel, AutoTokenizer
 import faiss
 import torch
@@ -20,6 +21,11 @@ numerical_columns = [
     "Output Size (B)", "Output Entropy (bits per symbol)", "Top Function Calls",
     "Peak Memory (B)", "Final Memory (B)", "CPU (ms)", "SLOC", "Instructions"
 ]
+
+def scale_column(df, col_name):
+    scaler = MinMaxScaler()
+    df[col_name] = scaler.fit_transform(df[[col_name]])
+    return df
 
 def normalize_resources(df):
     scaler = MinMaxScaler()
@@ -50,7 +56,7 @@ def transformer_embeddings(df, device="cuda", batch_size=1024):
     sample_text = df["Sample Text"].tolist()
     all_results = []
 
-    for i in range(0, len(sample_text), batch_size):
+    for i in trange(0, len(sample_text), batch_size):
         batch = sample_text[i:i + batch_size]
         inputs = tokenizer.batch_encode_plus(batch, return_tensors="pt", padding=True).to(device)
         with torch.no_grad(): 
