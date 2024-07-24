@@ -12,6 +12,7 @@ def read_config(config_file):
 
         'directory': config.get('Paths', 'directory'),
         'corpora_dir': config.get('Paths', 'corpora_dir'),
+        'cleaned_dir': config.get('Paths', 'cleaned_dir'),
         'fuzz_dir': config.get('Paths', 'fuzz_dir'),
         'score_dir': config.get('Paths', 'score_dir'),
 
@@ -44,6 +45,10 @@ def read_config(config_file):
             'Instructions': config.getfloat('Scaling', 'Instructions'),
         }
     }
+
+    assert settings["alpha_embed"] >= 0, "alpha must be >= 0, check {config_file}"
+    assert settings["beta_scaled"] >= 0, "beta must be >= 0, check {config_file}"
+    assert settings["gamma_anom"] >= 0, "gamma must be >= 0, check {config_file}"
 
     return settings
 
