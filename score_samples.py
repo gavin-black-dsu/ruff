@@ -9,10 +9,10 @@ import pickle
 from statistics_tests import perform_ks, estimate_power_with_data
 #from seed_data_mappers import model_dict, file_to_directory, model_dirs
 from dataframe_helpers import update_dataframe, extract_prefix, truncate_error
-from scoring import normalize_resources, scaled_resources, transformer_embeddings, quantized_vectors, make_anomaly_scores
+from scoring import normalize_resources, scaled_resources, transformer_embeddings, quantized_vectors, make_anomaly_scores, scale_column
 from trial_config import read_config
 
-def main(  cur_test, dataframe_loc, config_file='config.ini', iteration=1):
+def main(cur_test, dataframe_loc, config_file='config.ini', iteration=1):
     # Parse the configuration file
     config = read_config(config_file)
 
@@ -34,6 +34,7 @@ def main(  cur_test, dataframe_loc, config_file='config.ini', iteration=1):
     if alpha_embed > 0: # Skip the embeddings if not part of score
         df = transformer_embeddings(df, batch_size = config["batch_size"])
         df = make_anomaly_scores(df, "Embeddings", k)
+        scale_column(df, "Embeddings Distances")
     else:
         df["Embeddings Distances"] = 0
     embedding_time = time.time() 
@@ -41,12 +42,15 @@ def main(  cur_test, dataframe_loc, config_file='config.ini', iteration=1):
     if gamma_anom > 0: # Skip resource anomalies if not part of score
         df = quantized_vectors(df)
         df = make_anomaly_scores(df, "Resources", k)
+        scale_column(df, "Resources Distances")
     else:
         df["Resources Distances"] = 0
     resource_time = time.time()
         
     # No need to skip scaling, it produces minimal overhead
     df = scaled_resources(df)
+    scale_column(df, "Scaled Resources")
+
     scale_time = time.time()
 
     summed_coefficients = alpha_embed + beta_scaled + gamma_anom
@@ -57,7 +61,7 @@ def main(  cur_test, dataframe_loc, config_file='config.ini', iteration=1):
     
     end_time = time.time()
 
-    print("Max Scores: ")
+    print("Avg Scores: ")
     print("  - Embeddings: " + str(df["Embeddings Distances"].max()))
     print("  - Scaled:     " + str(df["Scaled Resources"].max()))
     print("  - Resources:  " + str(df["Resources Distances"].max()))
@@ -94,7 +98,6 @@ def main(  cur_test, dataframe_loc, config_file='config.ini', iteration=1):
         counts[corpus] += 1
     
     # Save the accumulated dataframe and metadata
-    print(f"{score_dir}/{test_name}")
     df.to_parquet(f"{score_dir}/{test_name}___{cur_test}.parquet")
     with open(f'{score_dir}/{test_name}___{cur_test}.pkl', 'wb') as file:
         pickle.dump({"Top Counts": counts, "Performance": times}, file)
