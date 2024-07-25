@@ -67,13 +67,15 @@ def transformer_embeddings(df, device="cuda", batch_size=1024):
     torch.cuda.empty_cache()
     return df
 
-def get_faiss_index(vectors):    
+def get_faiss_index(vectors, L2=False):
     dimension = len(vectors[0])
     emb = np.array(vectors, dtype=np.float32)
     faiss.normalize_L2(emb)
     res = faiss.StandardGpuResources()
 
-    cpu_index = faiss.IndexFlatIP(dimension)
+    cpu_index = None
+    if L2: cpu_index = faiss.IndexFlatL2(dimension) 
+    else: cpu_index = faiss.IndexFlatIP(dimension)
     index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
     
     index.add(emb)
@@ -120,9 +122,9 @@ def quantized_vectors(df, include_categories=True):
     #resource_vectors = [ x + y for x,y in zip(dictionary["Categories"], dictionary["Quantized"])]
     return df
 
-def make_anomaly_scores(df, column, k=100):
+def make_anomaly_scores(df, column, k=100, L2=False):
     lst = df[column].tolist()
-    embed_index = get_faiss_index(lst)
+    embed_index = get_faiss_index(lst, L2=L2)
     d = get_faiss_distances(embed_index, lst, k=k)
     df[f"{column} Distances"] = d["Averages"]
     df[f"{column} StdDev"] = d["StdDevs"]
